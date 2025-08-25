@@ -198,8 +198,16 @@ app.get('/health', (req, res) => res.json({ ok: true }));
 
 app.post('/send-quote', async (req, res) => {
   try {
+    console.log('📧 Starting /send-quote request');
+    console.log('Environment variables check:');
+    console.log('SMTP_HOST:', process.env.SMTP_HOST);
+    console.log('SMTP_PORT:', process.env.SMTP_PORT);
+    console.log('SMTP_USER:', process.env.SMTP_USER);
+    console.log('RECEIVER_EMAIL:', process.env.RECEIVER_EMAIL);
+    
     // Get admin emails from environment variable and split into array
     const adminEmails = process.env.RECEIVER_EMAIL ? process.env.RECEIVER_EMAIL.split(',').map(email => email.trim()) : [];
+    console.log('Parsed admin emails:', adminEmails);
         console.log('ENTER /send-quote handler, body:', JSON.stringify(req.body).slice(0,1000));
         // Quick duplicate detection: sign the JSON body with the DOWNLOAD_TOKEN_SECRET
     const bodyString = stableStringify(req.body || {});
@@ -230,6 +238,16 @@ app.post('/send-quote', async (req, res) => {
     console.log('process.env.SMTP_HOST:', process.env.SMTP_HOST);
     console.log('SMTP_HOST:', SMTP_HOST);
     console.log('SMTP config:', SMTP_HOST, SMTP_PORT, SMTP_USER);
+    console.log('Creating nodemailer transport with config:', {
+        host: SMTP_HOST,
+        port: Number(SMTP_PORT),
+        secure: false,
+        auth: {
+            user: SMTP_USER,
+            pass: SMTP_PASS ? '(password set)' : '(no password)'
+        }
+    });
+    
     const transporter = nodemailer.createTransport({
         host: SMTP_HOST,
         port: Number(SMTP_PORT),
@@ -238,10 +256,20 @@ app.post('/send-quote', async (req, res) => {
             user: SMTP_USER,
             pass: SMTP_PASS
         },
-        // enable logging/debug for investigation (remove in production)
+        // enable logging/debug for investigation
         logger: true,
         debug: true
     });
+    
+    // Verify SMTP connection
+    try {
+        console.log('Verifying SMTP connection...');
+        await transporter.verify();
+        console.log('✅ SMTP connection verified successfully');
+    } catch (error) {
+        console.error('❌ SMTP connection verification failed:', error);
+        throw error;
+    }
 
     // Calculate total price for email subject
     const totalPrice = products.reduce((sum, item) => sum + item.totalPrice, 0);
@@ -463,10 +491,9 @@ app.post('/send-quote', async (req, res) => {
 
     const mailHtml = emailTemplate.replace('<!-- PDF_BUTTON_PLACEHOLDER -->', pdfButtonHtml);
 
-    // Send exactly one email to admin
-    const mail = {
+    // Send individual emails to each admin
+    const mailBase = {
         from: `"Système de Devis" <${SMTP_USER}>`,
-        to: receiverList.join(', '),
         subject: `🔔 Nouvelle demande de devis - ${name} (${totalPrice.toLocaleString()} TND)`,
         html: mailHtml,
         attachments: [
@@ -486,12 +513,17 @@ app.post('/send-quote', async (req, res) => {
             recSet = new Set();
             sentRecipients.set(bodySig, recSet);
         }
+        
+        // Get admin emails from environment
+        const adminEmails = process.env.RECEIVER_EMAIL ? process.env.RECEIVER_EMAIL.split(',').map(email => email.trim()).filter(email => email) : [];
+        console.log('Processing admin emails:', adminEmails);
+        
         // determine which admin recipients still need the email
-        const toSendAdmins = receiverList.filter(r => !recSet.has(r));
+        const toSendAdmins = adminEmails.filter(r => !recSet.has(r));
         if (toSendAdmins.length > 0) {
             console.log('Sending admin emails individually to:', toSendAdmins.join(', '));
             for (const adminAddr of toSendAdmins) {
-                const singleMail = { ...mail, to: adminAddr };
+                const singleMail = { ...mailBase, to: adminAddr };
                 // Defensively remove any unexpected cc/bcc fields before sending
                 try {
                     if (singleMail.bcc) {
