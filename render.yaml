@@ -6,6 +6,8 @@ services:
     plan: free
     rootDir: ./backend
     buildCommand: >
+      apt-get update && \
+      apt-get install -y chromium-browser fonts-freefont-ttf fonts-noto-color-emoji && \
       npm ci --prefer-offline --no-audit --progress=false
     startCommand: node server.js
     autoDeploy: true
