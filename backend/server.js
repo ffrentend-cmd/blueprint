@@ -1,5 +1,3 @@
-
-
 import express from 'express';
 import cors from 'cors';
 import nodemailer from 'nodemailer';
@@ -463,10 +461,9 @@ app.post('/send-quote', async (req, res) => {
 
     const mailHtml = emailTemplate.replace('<!-- PDF_BUTTON_PLACEHOLDER -->', pdfButtonHtml);
 
-    // Send exactly one email to admin
-    const mail = {
+    // Send individual emails to each admin
+    const mailBase = {
         from: `"Système de Devis" <${SMTP_USER}>`,
-        to: receiverList.join(', '),
         subject: `🔔 Nouvelle demande de devis - ${name} (${totalPrice.toLocaleString()} TND)`,
         html: mailHtml,
         attachments: [
@@ -486,12 +483,17 @@ app.post('/send-quote', async (req, res) => {
             recSet = new Set();
             sentRecipients.set(bodySig, recSet);
         }
+        
+        // Get admin emails from environment
+        const adminEmails = process.env.RECEIVER_EMAIL ? process.env.RECEIVER_EMAIL.split(',').map(email => email.trim()).filter(email => email) : [];
+        console.log('Processing admin emails:', adminEmails);
+        
         // determine which admin recipients still need the email
-        const toSendAdmins = receiverList.filter(r => !recSet.has(r));
+        const toSendAdmins = adminEmails.filter(r => !recSet.has(r));
         if (toSendAdmins.length > 0) {
             console.log('Sending admin emails individually to:', toSendAdmins.join(', '));
             for (const adminAddr of toSendAdmins) {
-                const singleMail = { ...mail, to: adminAddr };
+                const singleMail = { ...mailBase, to: adminAddr };
                 // Defensively remove any unexpected cc/bcc fields before sending
                 try {
                     if (singleMail.bcc) {
