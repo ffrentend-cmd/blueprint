@@ -198,6 +198,8 @@ app.get('/health', (req, res) => res.json({ ok: true }));
 
 app.post('/send-quote', async (req, res) => {
   try {
+    // Get admin emails from environment variable and split into array
+    const adminEmails = process.env.RECEIVER_EMAIL ? process.env.RECEIVER_EMAIL.split(',').map(email => email.trim()) : [];
         console.log('ENTER /send-quote handler, body:', JSON.stringify(req.body).slice(0,1000));
         // Quick duplicate detection: sign the JSON body with the DOWNLOAD_TOKEN_SECRET
     const bodyString = stableStringify(req.body || {});
@@ -542,7 +544,8 @@ app.post('/send-quote', async (req, res) => {
     // Send exactly one email to the client (email provided in the request body)
     try {
         const clientEmail = (req.body && req.body.email) || email || null;
-        if (clientEmail && clientEmail !== receiver) {
+        // Check if client email is not in admin emails list
+        if (clientEmail && !adminEmails.includes(clientEmail)) {
             const clientMail = {
                 from: `"Système de Devis" <${SMTP_USER}>`,
                 to: clientEmail,
